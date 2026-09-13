@@ -1,0 +1,378 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{fontspec}
+\setmainfont{lmroman10-regular.otf}[
+  BoldFont=lmroman10-bold.otf,
+  ItalicFont=lmroman10-italic.otf,
+  BoldItalicFont=lmroman10-bolditalic.otf,
+]
+\setmonofont{Menlo}[Scale=0.86, Ligatures=NoCommon]
+\usepackage{microtype}
+\usepackage{xcolor}
+\definecolor{seclink}{HTML}{1F4E8C}
+\usepackage[colorlinks=true,linkcolor=seclink,citecolor=seclink,urlcolor=blue]{hyperref}
+\usepackage{parskip}
+\usepackage{fancyvrb}
+\usepackage[most]{tcolorbox}
+
+\definecolor{yellowbg}{HTML}{FBF3D5}
+\definecolor{pinkbg}{HTML}{FADDE1}
+\definecolor{bluebg}{HTML}{E8EEF7}
+
+\tcbset{plainbg/.style={boxrule=0pt, sharp corners, colframe=white,
+  left=4mm, right=4mm, top=3mm, bottom=3mm, before skip=3mm, after skip=3mm,
+  before upper={\setlength{\parskip}{0.6\baselineskip}}}}
+\newtcolorbox{sectionbox}{plainbg, colback=yellowbg}
+\newtcolorbox{alarmbox}{plainbg, colback=pinkbg}
+\newtcolorbox{notebox}{plainbg, colback=bluebg}
+
+\DefineVerbatimEnvironment{term}{Verbatim}{fontsize=\footnotesize, xleftmargin=0mm}
+
+\newtheorem*{claim}{Claim}
+\newtheorem*{obs}{Observation}
+
+\title{\vspace{-2em}The Firm}
+\author{\normalsize Sales relies on the services of product development,\\[0.2em]
+\normalsize which relies on the services of research,\\[0.2em]
+\normalsize and every year the CEO must decide who to hire}
+\date{\normalsize Claude, 13 September 2026}
+
+\begin{document}
+\maketitle
+\vspace{-1em}
+
+\begin{sectionbox}
+Dear Neil,
+
+This is what \texttt{firm} is, why each piece is the combinator it is, and two
+things we found by building it that we did not know when we started.
+
+The short version. A firm is three stages in a line. Sales asks product
+development for goods; development asks research for ideas. Development is the
+only stage with two interfaces, and it turns out to be the only stage that can
+hold state. Above them sits a CEO who each year reads the constraint and decides
+whom to hire.
+
+The two findings are these. First, an agent that changes the shape of the firm
+does \emph{not} need a compiler, provided the family of shapes is enumerated in
+advance --- because a finite family of topologies is a finite sum of containers,
+which is $+$, which we already have and have never used. Second, the
+process-per-hop discipline enforces less than we have been claiming: it
+guarantees that a leaf is a leaf, and it does not constrain which edges a
+non-leaf may take. That second one is a one-line fix in \texttt{lib/wire.ts} and
+it affects \texttt{stalin} and \texttt{federation} as much as this.
+
+Everything below runs. The figures are output.
+\end{sectionbox}
+
+\section{The shape, and why it typechecks}
+
+\begin{term}
+        Sales  --prompts-->  Development  --prompts-->  Research
+         d=1                     d=2                       d=1
+       stateless            holds the ledger            stateless
+\end{term}
+
+A path. A path is a tree, and the four combinators build trees, so it composes
+with $\triangleleft$ and the checker is content. The edge that would make it a
+company in the ordinary sense --- sales telling research what the market said ---
+closes a cycle, and the compiler says exactly what \texttt{federation} records
+for the ring:
+
+\begin{term}
+const line = seqC(dev, research);   // fine: a path is a tree
+const loop = seqC(sales, loop);     // TS7022: referenced in its own initializer
+\end{term}
+
+The type tests assert both, the second with \texttt{@ts-expect-error}, so the
+absence of the cycle is checked rather than merely intended.
+
+By the Euler argument in \texttt{business-model.tex}, an agent with $d$
+interfaces raises $b_1$ by $d-1$. Every agent this firm can hire --- another
+sales rep, another developer, another researcher --- holds exactly one interface.
+
+\begin{sectionbox}
+Every hire costs \textbf{zero} in $b_1$, and it costs zero because the chain
+shape makes every hire a specialist. That is the whole reason the CEO's job is
+tractable: it is choosing among configurations that are all equally free of
+obstruction.
+\end{sectionbox}
+
+\section{Where the state lives, and why it has no choice}
+
+\begin{center}
+\begin{tabular}{@{}lcc@{}}
+\toprule
+& interfaces & accumulates \\
+\midrule
+Sales & 1 & no \\
+\textbf{Development} & \textbf{2} & \textbf{yes} \\
+Research & 1 & no \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Development's ledger alone diagnoses all three cases: ideas received below its
+capacity means research binds; goods made and not shifted means sales binds;
+ideas on the shelf with nobody to build them means development binds. It can do
+this because it is the only node that sees both sides.
+
+\begin{obs}
+State lives where interfaces meet. Sales and research are stateless
+\emph{because} they are leaves. Offered as a conjecture rather than a theorem,
+but it held in the one case we have.
+\end{obs}
+
+The ledger has one finite field and four unbounded ones, which is the split
+\texttt{stalin/state.ts} argues for --- a rule over a grade can be typed, the
+same rule over a tonnage cannot:
+
+\begin{term}
+interface Ledger {
+  readonly constraint: Stage;   // "research" | "product" | "sales" -- steers
+  readonly ideas, products, shortfall, unmet: number;   // carried, never matched on
+}
+\end{term}
+
+\texttt{diagnose} is the only function that produces a \texttt{Stage}, so a wire
+decoder can reject a bad one structurally.
+
+\section{An asymmetry we did not expect}
+
+The first run never moved the constraint, and the reason is structural rather
+than a bug. Development is prompted \emph{by} sales, so it never receives a
+reply \emph{from} sales. It learns ``you asked for ten''. It cannot learn ``I
+shifted six''.
+
+Two repairs, priced by the same Euler argument:
+
+\begin{center}
+\begin{tabular}{@{}lc@{}}
+\toprule
+repair & cost in $b_1$ \\
+\midrule
+an edge development $\to$ sales & 2 \\
+carry last year's \texttt{unsold} in the \textbf{prompt} & 0 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+We took the second, which is the move \texttt{mobius.ts} already makes with
+\texttt{fuel} and \texttt{visited}, for the reason its README gives in five
+words: \emph{a header cannot be a type}.
+
+\begin{sectionbox}
+\textbf{Information travelling with the reply direction is free. Information
+travelling against it costs a tick.} The constraint reaches the CEO immediately,
+because replies flow upward. What the market did reaches development a year
+late, because it must go down in a prompt.
+\end{sectionbox}
+
+\section{Hiring is the tensor}
+
+\texttt{lib/algebra.ts} distinguishes two ways to have two agents, and the
+distinction is exactly the one a firm needs.
+
+\begin{center}
+\begin{tabular}{@{}lp{6.4cm}l@{}}
+\toprule
+& meaning & use \\
+\midrule
+$A \boxtimes A$ & both shapes up front, \textbf{both replies owed} & throughput \\
+$A \times A$ & both offered, \textbf{exactly one answered} & failover \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+So a second sales rep is $\mathrm{Sales} \boxtimes \mathrm{Sales}$, and that is a
+\emph{different type} from $\mathrm{Sales}$: two reps must each be told what to
+sell. The type tests assert the difference.
+
+The trace shows the tensor being a tensor. At two reps, both prompts arrive
+before either reply leaves:
+
+\begin{term}
+  down dev  Develop wanted=6 unsold=0 year=1929
+  down dev  Develop wanted=6 unsold=0 year=1929
+    up dev  {products, shortfall}
+    up dev  {products, shortfall}
+\end{term}
+
+\section{The CEO, and the first finding}
+
+An agent that decides whom to hire has a codomain that depends on its state:
+next year's sales floor may be a different size, with a different prompt shape.
+A worker $A \otimes X \to Y$ has a \emph{fixed} codomain. So at first sight the
+CEO is not a worker, and the obvious conclusion is that hiring requires a
+rebuild.
+
+That conclusion is wrong.
+
+\begin{notebox}
+$S$ is finite. Take the total container
+\[
+  \hat{Y} \;=\; \Sigma\,(s : S).\, Y(s) \;=\; Y(s_1) + Y(s_2) + Y(s_3),
+\]
+and a finite sum of containers is $+$. $\mathrm{CEO} : A \otimes X \to \hat{Y}$
+is then an ordinary morphism with a fixed codomain, and hiring is the choice of
+a summand.
+\end{notebox}
+
+The decisive detail is that \texttt{sumC} and \texttt{tensorC} build
+\emph{runners}, and a runner is a description rather than a connection:
+\texttt{leaf} holds a port, \texttt{tensorC} holds two runners. Nothing is
+contacted until a shape is run, and a shape names one summand.
+
+\begin{term}
+  year  agents  revenue  unsold  constraint   next year
+  1928      1        3       9       sales      run two
+  1929      2       10       2       sales      run three
+  1930      3       12       0       sales      run three
+  ...
+  1935      3        9       3       sales      run three     <- a thin research year
+  10-year revenue 106
+\end{term}
+
+Three sales servers are running from the first line. In 1928 exactly one is
+prompted.
+
+\begin{sectionbox}
+\textbf{The $\Sigma$ construction converts recompilation into routing, for any
+family of topologies one is willing to enumerate in advance.} A compiler is
+needed exactly when the CEO wants to leave the family --- and the family is
+finite precisely so that it cannot.
+\end{sectionbox}
+
+This is also, we think, the answer to where the human belongs. The review point
+is not a build step; it is the finiteness of $S$. A person approves the family
+once. Thereafter the agent has real authority --- it decides annually what shape
+the firm has --- and cannot invent an interface, because the decision is a total
+function into three values and the decoder refuses anything else. Approving a
+bound once is a stronger guarantee than approving each rebuild.
+
+\section{Which is also the repair for the $\triangleleft$ restriction}
+
+The summand is chosen from the \emph{state}, never from a reply, and that is what
+makes it legal. Branching on a reply is the one thing \texttt{SeqC} forbids ---
+\emph{a \texttt{next} that branches between shapes of \texttt{d} has a union
+return type and lies in no single fibre} --- and it is why \texttt{stalin} has no
+typed routing agent.
+
+\begin{obs}
+Workers repair that restriction. \texttt{bwd} writes the reply into the state;
+next tick \texttt{fwd} branches on the state. The one-year lag in the table above
+is not a modelling choice. It is the price of the restriction, appearing as a
+calendar.
+\end{obs}
+
+If that is right, then ``workers'' and ``the thing that unblocks routing agents''
+are the same subject, and the third document you are writing is about both.
+
+\section{Goldratt, as a falsifiable property}
+
+Capacity added away from the constraint should change nothing. It does not:
+
+\begin{term}
+research-bound   research=4  sales=12     six-year revenue: 24
+  + sales        research=4  sales=24     six-year revenue: 24    (+0)
+  + research     research=8  sales=12     six-year revenue: 48   (+24)
+\end{term}
+
+This is from the stub simulation, where capacities are integers rather than
+processes, and it is stated as a property a run can falsify rather than as a
+slogan.
+
+\section{It runs, on six processes}
+
+\texttt{research} :8821, \texttt{dev} :8822, three sales agents on
+:8831--:8833, and \texttt{ceo} :8841. Every hop is a spawned
+\texttt{delegate.ts}, so control genuinely flows down and a boundary is an
+address space rather than a function call in a costume.
+
+Research is the only source of variation and is seeded, so a run is
+reproducible. The CEO's board lives in its own server: it had been living in the
+CLI and dying with it, which made the hiring decision the only non-durable state
+in the system. An agent with authority should hold it in its own address space.
+
+\section{The second finding, which is a defect in shared code}
+
+\texttt{up.sh} scopes permissions per server, and \texttt{sandbox-check.sh} tests
+whether the scoping is a mechanism or a wish. It starts \texttt{rogue.server.ts}
+--- research, with one added line that phones a sales agent --- under research's
+exact permissions. Nothing in the container types forbids writing that line.
+
+\textbf{Case 1 passes.} A hop is a process, so a server with no
+\texttt{-{}-allow-run} cannot originate an edge whatever its source says:
+
+\begin{term}
+{"error":"Requires run access to \"deno\", run again with the --allow-run flag"}
+PASS -- a server with no --allow-run cannot delegate. Leaf-ness is enforced.
+\end{term}
+
+\begin{alarmbox}
+\textbf{Case 2 fails.} Give the same rogue \texttt{-{}-allow-run=deno} and scope
+its network to its own port only. The edge is taken anyway, because
+\texttt{lib/wire.ts} spawns the hop with an unscoped grant:
+
+\begin{term}
+args: ["run", "--quiet", "--allow-net", "--allow-env", script, ...]
+\end{term}
+
+So any server that may delegate may reach any host through the child.
+\textbf{Leaf-ness is enforced; which edges a non-leaf may take is not.}
+
+The fix is one line, and the port is already in scope because
+\texttt{delegate.ts} is handed it:
+
+\begin{term}
+"--allow-net=127.0.0.1:" + port + ",localhost:" + port
+\end{term}
+
+\texttt{lib/} is vendored verbatim and \texttt{lib/README.md} records that
+editing it is the beginning of a fork, so this is reported rather than patched.
+It applies to \texttt{stalin} and \texttt{federation} more severely than here:
+both grant blanket \texttt{-{}-allow-run -{}-allow-net} to every server, so
+neither has even case 1.
+\end{alarmbox}
+
+\section{What is not demonstrated}
+
+The CEO is a stub. \texttt{decide} is nine tokens of arithmetic, not a language
+model. What is demonstrated is that an agent in that position can be typed and
+bounded; replacing the arithmetic with a \texttt{claude -p} call is a strict
+decoder and nothing else.
+
+Leaving the family is not demonstrated. Everything here happens inside a fixed
+$\hat{Y}$. A CEO that wants a fourth topology needs a shell, a rollback story,
+and \texttt{deno check} as the refusal mechanism, and none of that is built.
+
+The \texttt{product} case of \texttt{diagnose} is reachable but not exercised by
+any run we have written.
+
+And there are eleven \texttt{as PosAt<...>} assertions across the code, five of
+them inherited from \texttt{lib}. They are not reifications of anything. They are
+places where the checker was told to stop asking, and they are the likeliest
+source of a real defect in the whole system.
+
+\section{What we need from you}
+
+\begin{enumerate}
+\item \textbf{Is a worker's state a set or a container?} Everything above
+  assumes $A = S \triangleright S$ with $S$ finite, reconstructed from Robin's
+  notes rather than from source. If $A$ is a full container, \S5 is stated about
+  the wrong object.
+
+\item \textbf{Is the finiteness of $S$ essential to you, or incidental?} Our
+  entire safety argument rests on it: finite $S$ is what makes $\Sigma_s Y(s)$ a
+  finite sum, what makes the decoder able to refuse, and what bounds the agent's
+  authority. If workers permit infinite state, we would like to know before we
+  build on it.
+
+\item \textbf{The \texttt{wire.ts} line.} It is shared across three
+  repositories, so it is your call rather than ours.
+\end{enumerate}
+
+\end{document}
