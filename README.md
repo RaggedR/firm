@@ -3,9 +3,13 @@
 **Where should the next agent go, and what does putting it there cost?**
 
 Three stages in a line — research, product development, sales — as containers.
-Development holds the state, diagnoses the constraint, and the constraint it
-computes *is* the build order for next year's topology. Adding an agent is a
-change of type, so it needs a recompile, and the recompile is the honest part.
+Development holds the state and diagnoses the constraint. A CEO above them
+reads that diagnosis and changes the shape of the firm.
+
+Adding a sales agent changes the *type* of the sales floor, because two agents
+must each be told what to sell. That looks like it needs a recompile. It does
+not, for a reason worth the repository: the finite family of topologies is
+itself a container, and moving between them is routing.
 
 Built on the four combinators of §5 of Neil Ghani's *Containers for Typed
 Agentic AI*, vendored unmodified into [`lib/`](lib/). Requires
@@ -14,6 +18,7 @@ Agentic AI*, vendored unmodified into [`lib/`](lib/). Requires
 ```
 deno check *.ts lib/*.ts     # includes the type tests; fails in both directions
 deno run firm-run.ts         # six years, three configurations
+deno run ceo-run.ts          # eight years under a CEO that resizes the floor
 ```
 
 ## The shape of it
@@ -137,14 +142,89 @@ The lag is not a defect. Routing is a function of state and the state is written
 by `bwd`, so the board always acts on last year's diagnosis. In a game that is
 the thing being played.
 
+## The CEO, and why it does not need a compiler
+
+`ceo.ts` adds an agent above sales that orchestrates the topology. Its codomain
+depends on its state — next year's floor may be a different size, with a
+different prompt shape — and a worker `A ⊗ X → Y` has a *fixed* codomain. So at
+first sight a CEO is not a worker.
+
+It is, because `S` is finite. Take the total container
+
+```
+Ŷ  =  Σ (s : S). Y(s)  =  Y(s₁) + Y(s₂) + Y(s₃)
+```
+
+A finite sum of containers is `+`, which `lib/algebra.ts` has had all along and
+which no other project in this family uses. `CEO : A ⊗ X → Ŷ` is an ordinary
+morphism again, and choosing a topology is choosing a summand.
+
+**The choice is made from the state, never from a reply.** Branching on a reply
+is the one thing `SeqC` forbids; branching on state is free. Deferring by one
+tick is what makes it legal:
+
+> Workers are the repair for that restriction. `bwd` puts the reply into the
+> state, and next tick `fwd` branches on the state. The one-year lag in the
+> trace is not a modelling choice — it is the price of the restriction, showing
+> up as a calendar.
+
+### The finding
+
+The exercise changed its own mind while being written. `sumC` and `tensorC`
+build **runners**, and a runner is a description: `leaf` holds a port,
+`tensorC` holds two runners. Nothing is contacted until a shape is `run`, and a
+shape names exactly one summand.
+
+```
+  year  floor  agents prompted  revenue  unsold   next year
+  1928     1              1         5       7      run two
+  1929     2              2        10       2      run three
+  1930     3              3        12       0      run three
+  …
+  eight-year revenue 87, agent prompts 21
+```
+
+Six agents exist in the sum from the first line. In 1928 exactly one is
+prompted. So:
+
+**The Σ construction converts recompilation into routing, for any family you
+are willing to enumerate in advance.** The compiler is needed exactly when the
+CEO wants to leave the family — and the family is finite precisely so that it
+cannot.
+
+That is the safety argument, and it is stronger than a human review step. The
+CEO gets real authority: it decides, each year, what shape the firm has. It
+cannot invent an interface, because `decide` is a total function into three
+values and the decoder rejects anything else. Review moves from *approving every
+rebuild* to *approving the family once*, which is what a type is for.
+
+### What `sumC` does to replies
+
+The first version of `ceo.ts` did not compile, and the error is worth keeping:
+
+```
+Property 'value' does not exist on type '{ left: {...}; right: {...} }'
+```
+
+`sumC` tags **shapes** and leaves **positions** alone — `pos (Left p) = c.Pos p`
+— so the reply comes back as the tensor's own, unwrapped. Routing is visible
+going down and invisible coming back, which is right: you know which branch you
+took. `stalin/PLAN-routing-agent.md` predicted this in prose;
+`ceo-type-tests.ts` now asserts it so the warning cannot rot.
+
 ## What this does not demonstrate
 
 - **The `product` case is not exercised.** Development has no capacity bound, so
   ideas can never pile up unbuilt. `diagnose` returns `"product"` and nothing in
   `firm-run.ts` makes it.
-- **`⊠` is not wired into the run.** The type tests prove `Sales ⊠ Sales` is a
-  different type; the simulation fakes capacity with an integer. Doing it
-  properly means two ports, which means servers, which is the next piece of work.
+- **The CEO is a stub, not an LLM.** `decide` is nine tokens of arithmetic. The
+  architecture is what is demonstrated: that an agent in that position can be
+  typed, and bounded. Replacing `decide` with a `claude -p` call and a strict
+  decoder is the next piece of work, and the decoder is the whole of it.
+- **Leaving the family is not demonstrated.** Everything here happens inside a
+  fixed `Ŷ`. A CEO that genuinely recompiles — that wants a fourth topology —
+  needs a shell, a rollback story, and `deno check` as the refusal mechanism.
+  None of that is here.
 - **Every leaf is a stub.** There are no processes here yet, so nothing in this
   repository yet demonstrates the claim that a container boundary enforced by a
   process is one a careless developer cannot leak through.
