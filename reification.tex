@@ -58,8 +58,13 @@ quietly abandoned one convenience at a time.
 This note argues it has not, by doing the only thing that can settle it:
 listing all twelve, saying in each case what moved and where it went, and
 separating the ones where nothing was lost from the ones where something
-genuinely was. There are three of the latter, they are named, and one of them
-is the reason the routing agent is not built yet.
+genuinely was. There are two of the latter, both named where they occur, and
+one of them is the reason the routing agent is not built yet.
+
+Item 5 was written before \texttt{firm/ceo.ts} was built and is now weaker
+than it was. The correction is in place and is the most useful thing here:
+for any family of topologies one is willing to enumerate in advance, there
+is no reification at all.
 \end{sectionbox}
 
 \section{The pattern, stated once}
@@ -85,8 +90,8 @@ remains inspectable. Eight of the twelve.\\
 types a strictly smaller class of programs than the mathematics describes. Two
 of the twelve, both named in comments where they occur.\\
 \addlinespace
-\textbf{Leak} & Nothing checks anything. Two, and they are the same two lines
-repeated.\\
+\textbf{Leak} & Nothing checks anything. \emph{Not} among the twelve --- a cast
+is not a reification --- but eleven of them exist and \S7 says where.\\
 \bottomrule
 \end{tabular}
 \end{center}
@@ -195,20 +200,79 @@ This is a real gap between the note and the code, it is the sharpest one, and
 it is not repaired by anything in this document.
 \end{alarmbox}
 
-\subsection*{5. A type-level function becomes a build step}
+\subsection*{5. A type-level function becomes a build step --- outside the family, and only there}
 
-A worker's state set $S$ is finite, so the family of topologies it can name is
-finite, and what one wants is
+An agent that orchestrates the topology has a codomain that depends on its
+state: next year's sales floor may be a different size, and a floor of two
+agents must be told two consignments, so its prompt shape is not the prompt
+shape of a floor of one. What one wants is
 \[
-  \mathrm{Firm} : \mathrm{Ledger} \to \mathrm{Type}.
+  \mathrm{Firm} : \mathrm{Ledger} \to \mathrm{Type},
 \]
-TypeScript has no $S \to \mathrm{Type}$. So in \texttt{firm} the map is
-realised by running the compiler again: the system emits a finite label, and a
-build step turns the label into the next system. Adding a sales agent is
-$\mathrm{Sales} \otimes \mathrm{Sales}$, a different type, and
-\texttt{firm-type-tests.ts} asserts that it is different.
+and TypeScript has no $S \to \mathrm{Type}$. The obvious conclusion is that
+the map must be realised by running the compiler again, and that adding a sales
+agent is therefore a rebuild.
 
-\textbf{Relocation}, and \S6 argues it is an improvement.
+\begin{notebox}
+That conclusion is wrong, and \texttt{firm/ceo.ts} is what corrected it.
+
+$S$ is finite. So take the total container
+\[
+  \hat{Y} \;=\; \Sigma\,(s : S).\, Y(s) \;=\; Y(s_1) + Y(s_2) + Y(s_3),
+\]
+and a finite sum of containers is $+$, which \texttt{lib/algebra.ts} has had
+all along and which no other project in this family uses. $\mathrm{CEO} :
+A \otimes X \to \hat{Y}$ is then an ordinary container morphism, with a fixed
+codomain, and choosing a topology is choosing a summand.
+\end{notebox}
+
+The decisive detail is that \texttt{sumC} and \texttt{tensorC} build
+\emph{runners}, and a runner is a description rather than a connection:
+\texttt{leaf} holds a port, \texttt{tensorC} holds two runners. Nothing is
+contacted until a shape is run, and a shape names exactly one summand. The
+trace shows it:
+
+\begin{term}
+  year  floor  agents prompted  revenue  unsold   next year
+  1928     1              1         5       7      run two
+  1929     2              2        10       2      run three
+  1930     3              3        12       0      run three
+  ...
+  eight-year revenue 87, agent prompts 21
+\end{term}
+
+Six agents exist in the sum from the first line. In 1928 exactly one is
+prompted.
+
+\begin{sectionbox}
+\textbf{The $\Sigma$ construction converts recompilation into routing, for any
+family one is willing to enumerate in advance.} The compiler is needed exactly
+when the agent wants to leave the family --- and the family is finite precisely
+so that it cannot.
+\end{sectionbox}
+
+Two further consequences, both of which matter more than the item itself.
+
+First, the choice of summand is made from the \emph{state} and never from a
+reply, and that is what makes it legal. Branching on a reply is the one thing
+item 4 forbids. Deferring the branch by one tick is the repair, and so:
+
+\begin{obs}
+Workers repair item 4. \texttt{bwd} writes the reply into the state; next tick
+\texttt{fwd} branches on the state. The one-year lag in the trace above is not
+a modelling choice --- it is the price of the restriction, appearing as a
+calendar.
+\end{obs}
+
+Second, \texttt{sumC} tags \emph{shapes} and leaves \emph{positions} alone
+($\mathrm{pos}\,(\mathrm{Left}\;p) = c.\mathrm{Pos}\,p$), so a reply arrives
+unwrapped. The first draft of \texttt{ceo.ts} assumed otherwise and did not
+compile. Routing is visible going down and invisible coming back, which is
+correct: one knows which branch one took.
+
+\textbf{Relocation, and conditional.} Inside an enumerated family this is not
+a reification at all. Outside one it is, and \S8 is where that boundary is
+argued.
 
 \section{Reifications forced by the machine}
 
@@ -364,7 +428,8 @@ conditional types, and type-level functions. In Agda or Idris they vanish and
 the code says what the note says. The theory is therefore uncompromised; what is
 compromised is the host, and that was known in advance.
 
-\textbf{Several are improvements.} Item 9 replaces a promise with a mechanism.
+\textbf{Several are improvements.} Item 5 turns out not to be a reification at
+all in the bounded case. Item 9 replaces a promise with a mechanism.
 Item 10 puts the check where the bytes actually arrive. Item 11 turns a proof
 into a decidable one without weakening it. Item 12 is a better model of the
 subject than the un-reified version would have been.
@@ -391,41 +456,63 @@ do either.
 And there is a third category, smaller and less respectable.
 
 \begin{alarmbox}
-\textbf{Seven type assertions.} \texttt{lib/algebra.ts} contains five
-\texttt{as PosAt<...>} casts, one in each combinator's \texttt{run}, and
-\texttt{firm.ts} contains two more. A cast is not a reification. Nothing has
+\textbf{Eleven type assertions.} \texttt{lib/algebra.ts} contains five
+\texttt{as PosAt<...>} casts, one in each combinator's \texttt{run};
+\texttt{firm.ts} and \texttt{ceo.ts} contain two each; and two more are in
+stub leaves used by the simulations. A cast is not a reification. Nothing has
 been relocated and nothing is checked: the checker has been told to stop asking.
 
-They are confined to the four combinators and to the body of one worker, which
-is the best that can be said for them. Every one is a place where the runner
-knows the fibre it is in and cannot convince the checker of it --- which is item
-2 failing at the last inch. If any of the twelve is going to be the source of a
-real defect, it is these.
+They are confined to the four combinators, the bodies of two workers and two
+test doubles, which is the best that can be said for them. Every one is a place
+where the runner knows the fibre it is in and cannot convince the checker of it
+--- which is item 2 failing at the last inch. If anything catalogued here is
+going to be the source of a real defect, it is these, and they are not among
+the twelve.
 \end{alarmbox}
 
 \section{What would remove them, and what one would keep anyway}
 
-In a dependently-typed host, items 1--5 disappear. Item 5 is the interesting
-case, because it would disappear into item 1: with $\mathrm{Firm} :
-\mathrm{Ledger} \to \mathrm{Type}$ available internally, ``the running system
-computes the specification of its own successor'' and ``a worker is a harness''
-would be one construct rather than two, and no build step would be needed.
+In a dependently-typed host, items 1, 2 and 3 disappear and the code says what
+the note says.
 
-One should decline that.
+Item 5 is no longer among them, and the reason is the substance of this section.
+An earlier draft argued that item 5 would collapse into item 1 given
+$\mathrm{Firm} : \mathrm{Ledger} \to \mathrm{Type}$, and that one should
+decline the collapse, because \emph{the build step is where a person looks}.
+
+That argument does not survive \texttt{ceo.ts}. For any enumerated family there
+is no build step to look at. The topology changes every year, under an agent's
+control, inside a fixed type, with no compiler involved at any point.
+
+The checkpoint has not vanished. It has moved, and improved.
 
 \begin{sectionbox}
-The build step is where a person looks. A system that reconfigures its own
-topology with no recompile has no review point, and the recompile is the only
-moment at which a human is guaranteed to be in the loop.
+The review point is not the compiler. It is the \textbf{finiteness of $S$}.
 
-So: as mathematics, item 5 is item 1 missing a dependent type. As engineering,
-the missing dependent type is load-bearing, and one would want the build step
-back even in Agda.
+A human approves the family once, at design time. Thereafter the agent has real
+authority --- it decides annually what shape the firm has --- and cannot invent
+an interface, because the decision is a total function into three values and the
+decoder rejects anything else.
+
+Approving a bound once is a stronger guarantee than approving each rebuild,
+because a bound cannot be tired, rushed, or persuaded.
 \end{sectionbox}
 
-Those two readings do not reconcile and are not forced to. They differ on
-whether the compiler is a limitation or a checkpoint, and the honest answer is
-that in this application it is both.
+What remains genuinely open is narrower and better posed than the old question.
+
+\begin{claim}
+Does the orchestrating agent ever need to leave the family?
+\end{claim}
+
+If it does not, there is no compiler in the loop, no shell to grant, and nothing
+resembling the ORIENT repair --- the agent sits at the root of a path, which is
+not a coordinator because a path has no symmetry to break.
+
+If it does, everything the earlier draft said comes back at once and with more
+force: a shell, a rollback story, \texttt{deno check} as the refusal mechanism,
+and a human, because leaving the family is exactly the act the family was drawn
+to prevent. That is where the compiler is a checkpoint rather than a limitation,
+and it is the only place.
 
 \section{What this document does not establish}
 
@@ -437,6 +524,11 @@ Item 9's argument --- that a process boundary is one a careless developer cannot
 leak through --- is stated in this note and demonstrated in \texttt{stalin} and
 \texttt{federation}, which run real servers. It is \emph{not} demonstrated in
 \texttt{firm}, where every leaf is still a stub.
+
+Item 5 has now been wrong once in this document's own lifetime, which is the
+best available evidence that the rest of the catalogue should be read as a
+report rather than a proof. It was corrected by building the thing, not by
+thinking harder about it.
 
 And \texttt{Worker} in \texttt{firm.ts} is a reconstruction from second-hand
 notes, not from the source. If the state of a worker is a full container rather
