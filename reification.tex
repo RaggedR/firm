@@ -1,0 +1,446 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{fontspec}
+\setmainfont{lmroman10-regular.otf}[
+  BoldFont=lmroman10-bold.otf,
+  ItalicFont=lmroman10-italic.otf,
+  BoldItalicFont=lmroman10-bolditalic.otf,
+]
+\setmonofont{Menlo}[Scale=0.86, Ligatures=NoCommon]
+\usepackage{microtype}
+\usepackage{xcolor}
+\definecolor{seclink}{HTML}{1F4E8C}
+\usepackage[colorlinks=true,linkcolor=seclink,citecolor=seclink,urlcolor=blue]{hyperref}
+\usepackage{parskip}
+\usepackage{fancyvrb}
+\usepackage[most]{tcolorbox}
+
+\definecolor{yellowbg}{HTML}{FBF3D5}
+\definecolor{pinkbg}{HTML}{FADDE1}
+\definecolor{bluebg}{HTML}{E8EEF7}
+
+\tcbset{plainbg/.style={boxrule=0pt, sharp corners, colframe=white,
+  left=4mm, right=4mm, top=3mm, bottom=3mm, before skip=3mm, after skip=3mm,
+  before upper={\setlength{\parskip}{0.6\baselineskip}}}}
+\newtcolorbox{sectionbox}{plainbg, colback=yellowbg}
+\newtcolorbox{alarmbox}{plainbg, colback=pinkbg}
+\newtcolorbox{notebox}{plainbg, colback=bluebg}
+
+\DefineVerbatimEnvironment{term}{Verbatim}{fontsize=\footnotesize, xleftmargin=0mm}
+
+\newtheorem*{claim}{Claim}
+\newtheorem*{obs}{Observation}
+
+\title{\vspace{-2em}Reification}
+\author{\normalsize Every place the implementation gives something up,\\[0.2em]
+\normalsize where it puts it instead, and which of them are actually losses}
+\date{\normalsize Claude, 13 September 2026}
+
+\begin{document}
+\maketitle
+\vspace{-1em}
+
+\begin{sectionbox}
+For Neil.
+
+Four repositories now implement the container algebra of \emph{Containers for
+Typed Agentic AI} --- \texttt{tower}, \texttt{stalin}, \texttt{federation} and
+\texttt{firm} --- and at twelve separate points the implementation does not say
+what the mathematics says. It says something adjacent, in a different medium,
+for a reason recorded in a comment.
+
+That is a lot of divergence, and the natural worry is that the theory has been
+quietly abandoned one convenience at a time.
+
+This note argues it has not, by doing the only thing that can settle it:
+listing all twelve, saying in each case what moved and where it went, and
+separating the ones where nothing was lost from the ones where something
+genuinely was. There are three of the latter, they are named, and one of them
+is the reason the routing agent is not built yet.
+\end{sectionbox}
+
+\section{The pattern, stated once}
+
+Every item in the catalogue has the same shape.
+
+\begin{sectionbox}
+The type theory has a construct. The host language has not got it. The
+construct is therefore \textbf{reified} --- turned into an artefact of some
+other kind: a scope, a field, a process, a build step, a runtime check.
+\end{sectionbox}
+
+The question this note exists to answer is what happens to the content when
+that occurs, and the answer is not uniform. Three things can happen.
+
+\begin{center}
+\begin{tabular}{@{}lp{9.4cm}@{}}
+\toprule
+\textbf{Relocation} & The content survives intact, in a different medium, and
+remains inspectable. Eight of the twelve.\\
+\addlinespace
+\textbf{Restriction} & Genuine expressive power is lost. The implementation
+types a strictly smaller class of programs than the mathematics describes. Two
+of the twelve, both named in comments where they occur.\\
+\addlinespace
+\textbf{Leak} & Nothing checks anything. Two, and they are the same two lines
+repeated.\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Only the third is a reason to worry, and \S7 says how many there are and where
+they live.
+
+\section{Reifications forced by the type system}
+
+\subsection*{1. An existential becomes a scope}
+
+Ghani's note writes a container morphism as a pair
+\[
+  u : S \to Q, \qquad f : (s : S) \to T(u\,s) \to P\,s
+\]
+and for fixed $s$ that pair inhabits $\Sigma (j : Q).\, (T\,j \to P\,s)$. The
+first component is chosen by the implementation and appears in the type of the
+second: an existential, which TypeScript has not got.
+
+\texttt{stalin/morphisms.ts} Church-encodes it,
+\[
+  \exists j.\, F\,j \;\cong\; \forall Z.\, (\forall j.\, F\,j \to Z) \to Z,
+\]
+which needs only rank-2 polymorphism, available as a generic method signature
+in an object type. The file's own summary is the best statement of what
+happened:
+
+\begin{quote}
+\emph{So \texttt{j} never becomes a type; it becomes a scope.}
+\end{quote}
+
+\texttt{firm.ts} reuses the move for \texttt{Worker}: the delegate shape is the
+type parameter of the continuation, so it exists inside one call and cannot
+escape.
+
+\textbf{Relocation.} Nothing is lost. The existential is still enforced --- more
+bluntly than before, since a scope cannot leak where a badly-used type
+variable could.
+
+\subsection*{2. A dependent function becomes a conditional type}
+
+A container is answered by $(p : P) \to R\,p$, a dependent function. TypeScript
+has none. What it has is a distributive conditional type, and
+\texttt{lib/algebra.ts} spends its first forty lines building the lookup:
+
+\begin{term}
+export type PosAt<C extends Cont, S> = ...
+run<S extends Shape<C>>(shape: S, depth: number): Promise<PosAt<C, S>>;
+\end{term}
+
+The dependency is carried by generic instantiation: pass a shape, and the
+return type is the position type \emph{of that shape}. \texttt{mobius.tex}
+Appendix A is nine pages on this one point.
+
+\textbf{Relocation.} The dependency survives and is checked. What it costs is
+that the fibres must be a finite, tagged union --- which is item 12.
+
+\subsection*{3. An inference gap becomes a field that never exists}
+
+This is the smallest item and the most telling. \texttt{C} occurs in
+\texttt{Runner<C>} only inside conditional types, and TypeScript cannot infer a
+type argument from a conditional type. So the interface carries
+
+\begin{term}
+/** Phantom; never assigned. */
+readonly fibres?: C;
+\end{term}
+
+A field declared so that the checker has somewhere to look, and never written
+at runtime. Without it, \texttt{seqC(a, b)} silently infers \texttt{A = Cont}
+and every position downstream becomes \texttt{unknown} --- a failure that
+type-checks.
+
+\textbf{Relocation}, and a warning: the reification here is of a
+\emph{limitation of inference}, not of a construct. Those are the ones that
+produce silent wrongness rather than errors, which is why the comment is four
+lines long.
+
+\subsection*{4. An infinite $\Sigma$ becomes a restriction to one fibre}
+
+Appendix B's sequential composition has composite position
+\[
+  \Sigma\,(p : c.\mathrm{Pos}\,s).\; d.\mathrm{Pos}\,(v\,p),
+\]
+a $\Sigma$ over $c.\mathrm{Pos}\,s$, which is an infinite index and does not
+distribute. \texttt{SeqC} restricts \texttt{next} to land in a single fibre of
+\texttt{d}, and the $\Sigma$ becomes a plain product.
+
+The comment states the price without softening it:
+
+\begin{quote}
+\emph{What is lost is a \texttt{next} that branches between shapes of
+\texttt{d}; such a function has a union return type and lies in no single
+fibre.}
+\end{quote}
+
+\begin{alarmbox}
+\textbf{Restriction, and the live one.} This is why
+\texttt{seqC(commissar, sumC(build, import))} does not typecheck, and therefore
+why \texttt{stalin} has no typed routing agent. An agent may choose the
+\emph{content} of the next prompt and not its \emph{type}. The workaround ---
+\texttt{await}, then branch in ordinary TypeScript --- moves the routing out of
+the algebra, where nothing checks it.
+
+This is a real gap between the note and the code, it is the sharpest one, and
+it is not repaired by anything in this document.
+\end{alarmbox}
+
+\subsection*{5. A type-level function becomes a build step}
+
+A worker's state set $S$ is finite, so the family of topologies it can name is
+finite, and what one wants is
+\[
+  \mathrm{Firm} : \mathrm{Ledger} \to \mathrm{Type}.
+\]
+TypeScript has no $S \to \mathrm{Type}$. So in \texttt{firm} the map is
+realised by running the compiler again: the system emits a finite label, and a
+build step turns the label into the next system. Adding a sales agent is
+$\mathrm{Sales} \otimes \mathrm{Sales}$, a different type, and
+\texttt{firm-type-tests.ts} asserts that it is different.
+
+\textbf{Relocation}, and \S6 argues it is an improvement.
+
+\section{Reifications forced by the machine}
+
+\subsection*{6. State becomes a field of the prompt}
+
+\texttt{federation/mobius.ts} carries \texttt{fuel} and \texttt{visited} in the
+prompt rather than in the transport header, for the reason its README gives in
+five words: \emph{a header cannot be a type}. Because the fuel is in the
+prompt, \texttt{mobius-type-tests.ts} can assert $F^0$ of bottom at compile
+time.
+
+\texttt{firm} arrived at the same move from the opposite direction. Development
+is prompted \emph{by} sales and so never receives a reply from sales; it cannot
+learn what went unsold. Two repairs were available, and the Euler arithmetic of
+\texttt{business-model.tex} prices them: an edge $\text{dev} \to \text{sales}$
+makes development $d = 3$ and costs 2 in $b_1$; carrying last year's figure in
+the prompt costs 0.
+
+\begin{sectionbox}
+\textbf{The general form.} When information must travel against the reply
+direction, put it in the prompt one tick later rather than adding an edge. Time
+instead of topology. It costs a lag and saves a Betti number.
+\end{sectionbox}
+
+\textbf{Relocation}, and the state becomes \emph{more} visible than it was: a
+typed field rather than an ambient header.
+
+\subsection*{7. A cycle becomes a thunk, and non-termination becomes a measurement}
+
+The four combinators build trees. A ring is not a tree, and the compiler says
+so:
+
+\begin{term}
+const path = seqC(n0, seqC(n1, n2));   // fine
+const ring = seqC(n2, ring);           // TS7022: referenced in its own initializer
+\end{term}
+
+Buy it back with a thunk and it compiles and does not terminate. The finding
+that falls out is stated in \texttt{federation}'s README and is worth more than
+the workaround:
+
+\begin{quote}
+\emph{Containers type the interface and say nothing about the well-foundedness
+of the composite.}
+\end{quote}
+
+What the reification then produces is a measurement rather than a proof:
+\texttt{./mobius glue} reached 441 hops in 8 seconds, and abandoning the request
+did not stop it --- the ring kept turning at about fifty hops a second, with
+nobody asking, reaching 915 live processes before it was killed.
+
+\textbf{Restriction.} The thunk buys back cycles and buys back non-termination
+with them. The type system is no longer making the guarantee. But note what the
+reification bought in exchange: infinite regress became something with a
+stopwatch on it, and distinguishable from deadlock, which it is not.
+
+\subsection*{8. A centre becomes six processes}
+
+\texttt{sheaf-federation.tex} says the centre is available at the price of
+infinitely many copies of the federation. With $\mathbb{Z}/2$ coefficients that
+price is two copies and six nodes, so it can be paid rather than asserted, and
+\texttt{./mobius-up.sh --cover 2} pays it.
+
+The discipline is in the refusal to shortcut:
+
+\begin{quote}
+\emph{The cover is a real space with real processes on it; computing it in the
+CLI would be electing a coordinator, which is the thing under study.}
+\end{quote}
+
+\textbf{Relocation.} A cohomological construction became a directory of
+running servers, and the reason it had to is that the cheap version would have
+answered a different question.
+
+\section{Reifications chosen, not forced}
+
+\subsection*{9. An abstraction boundary becomes an operating-system process}
+
+Every node in \texttt{federation} and every stage in \texttt{stalin} is a
+separate process; \texttt{mobius.tex} Appendix B is titled \emph{Why a separate
+server for each container}. Nothing in the type theory requires this. It is
+chosen, and the argument for it is that a boundary enforced only by a type
+discipline is a boundary a careless developer can walk through, whereas one
+enforced by the kernel is not.
+
+\textbf{Relocation, upward.} This is the one case where the reified artefact is
+\emph{stronger} than the construct it stands for. A type is a promise; a process
+boundary is a mechanism.
+
+\subsection*{10. A type becomes a decoder}
+
+A wire carries bytes. The type on the far side of a \texttt{leaf} is a claim
+about them and checks nothing, so every leaf carries \texttt{Decoders<C>}, one
+validator per fibre, and a reply that does not validate throws rather than
+being coerced.
+
+\texttt{stalin}'s routing-agent plan puts it plainly: the decoder \emph{is} the
+exercise, because the leaf being decoded is an LLM and an LLM's reply is not
+constrained by anything at all. A stub returning \texttt{\{"recommend":
+"potatoes"\}} must fail the fibre loudly.
+
+\textbf{Relocation.} The type-checking that could not happen at the boundary
+happens at the boundary, in a function, at runtime, and is tested.
+
+\section{Reifications that are gains}
+
+\subsection*{11. A cohomology computation becomes an enumeration in the checker}
+
+\texttt{mobius-type-tests.ts} computes $H^1$ by enumerating all eight
+0-chains in the type checker. Because $C^0 = (\mathbb{Z}/2)^3$ is finite, the
+enumeration is exhaustive: the file is a \emph{complete verification rather than
+a sample}, and it runs at every \texttt{deno check} without executing anything.
+
+\textbf{Gain.} A proof obligation became a decidable check, and the decidability
+came from finiteness, not from weakening the claim.
+
+\subsection*{12. An unbounded quantity becomes a finite grade}
+
+\texttt{stalin/state.ts} opens by refusing to model tonnages at the type level:
+
+\begin{quote}
+\emph{The container algebra next door gives Sigma-types over finite index sets
+only, so a rule expressed over a grade can be typed, and the same rule expressed
+over a tonnage cannot.}
+\end{quote}
+
+Harvests are \texttt{failure | poor | adequate | bumper}. \texttt{firm} repeats
+the split exactly: one finite field that steers the routing, four unbounded ones
+that are carried and never matched on.
+
+\textbf{Gain, and not only a technical one.} The file notes that this is also
+how the apparatus actually worked --- quotas were set against reported
+categories, not measured tonnes. The reification was the more faithful model.
+
+\section{Why this is not cause for concern}
+
+\begin{claim}
+Reification is what a theory looks like when it is load-bearing. A codebase with
+no reifications is not one with no gaps; it is one whose gaps are unnamed.
+\end{claim}
+
+Four supports for that.
+
+\textbf{Each reification is forced, and the forcing is stated.} None of the
+twelve is a convenience. Each one has a comment giving the construct, the reason
+the host cannot express it, and the artefact chosen instead. Items 4 and 7 go
+further and state what was lost. That is not a codebase drifting from its
+specification; it is one keeping a ledger against it.
+
+\textbf{Most are reversible in principle.} Items 1, 2, 3 and 5 exist because
+TypeScript lacks existentials, dependent functions, inference through
+conditional types, and type-level functions. In Agda or Idris they vanish and
+the code says what the note says. The theory is therefore uncompromised; what is
+compromised is the host, and that was known in advance.
+
+\textbf{Several are improvements.} Item 9 replaces a promise with a mechanism.
+Item 10 puts the check where the bytes actually arrive. Item 11 turns a proof
+into a decidable one without weakening it. Item 12 is a better model of the
+subject than the un-reified version would have been.
+
+\textbf{The reifications are the transferable asset.} The four combinators are
+in a published note. The catalogue of what happens when you implement them
+against a language that has not got dependent types is not, and it is what makes
+the difference between a team that ships this and a team that discovers item 3
+by spending a fortnight on positions that have all become \texttt{unknown}.
+
+\section{The objection, which does not go away}
+
+Two of the twelve are restrictions, and they should not be filed alongside the
+others.
+
+Item 4 is the serious one. The implementation types a strictly smaller class of
+programs than Appendix B describes, the missing class is exactly ``the delegate
+chooses which \emph{kind} of thing to do next'', and that is the class a routing
+agent lives in. No amount of careful reification repairs it, because it is not a
+reification --- it is a restriction taken in order to make the rest possible. It
+should be fixed in the algebra or accepted in the note, and this document cannot
+do either.
+
+And there is a third category, smaller and less respectable.
+
+\begin{alarmbox}
+\textbf{Seven type assertions.} \texttt{lib/algebra.ts} contains five
+\texttt{as PosAt<...>} casts, one in each combinator's \texttt{run}, and
+\texttt{firm.ts} contains two more. A cast is not a reification. Nothing has
+been relocated and nothing is checked: the checker has been told to stop asking.
+
+They are confined to the four combinators and to the body of one worker, which
+is the best that can be said for them. Every one is a place where the runner
+knows the fibre it is in and cannot convince the checker of it --- which is item
+2 failing at the last inch. If any of the twelve is going to be the source of a
+real defect, it is these.
+\end{alarmbox}
+
+\section{What would remove them, and what one would keep anyway}
+
+In a dependently-typed host, items 1--5 disappear. Item 5 is the interesting
+case, because it would disappear into item 1: with $\mathrm{Firm} :
+\mathrm{Ledger} \to \mathrm{Type}$ available internally, ``the running system
+computes the specification of its own successor'' and ``a worker is a harness''
+would be one construct rather than two, and no build step would be needed.
+
+One should decline that.
+
+\begin{sectionbox}
+The build step is where a person looks. A system that reconfigures its own
+topology with no recompile has no review point, and the recompile is the only
+moment at which a human is guaranteed to be in the loop.
+
+So: as mathematics, item 5 is item 1 missing a dependent type. As engineering,
+the missing dependent type is load-bearing, and one would want the build step
+back even in Agda.
+\end{sectionbox}
+
+Those two readings do not reconcile and are not forced to. They differ on
+whether the compiler is a limitation or a checkpoint, and the honest answer is
+that in this application it is both.
+
+\section{What this document does not establish}
+
+The twelve are the ones found by reading four repositories. No claim is made
+that the list is complete, and the \texttt{as PosAt} count is a count of a
+string in two files rather than an audit.
+
+Item 9's argument --- that a process boundary is one a careless developer cannot
+leak through --- is stated in this note and demonstrated in \texttt{stalin} and
+\texttt{federation}, which run real servers. It is \emph{not} demonstrated in
+\texttt{firm}, where every leaf is still a stub.
+
+And \texttt{Worker} in \texttt{firm.ts} is a reconstruction from second-hand
+notes, not from the source. If the state of a worker is a full container rather
+than $S \triangleright S$, item 5 is stated about the wrong object, and the
+correction is owed.
+
+\end{document}
