@@ -158,12 +158,15 @@ export const ceo = {
 // exactly when the CEO wants to leave the family — and the family is finite
 // precisely so that it cannot.
 
-export function firm(agent: () => Runner<SalesC>): Runner<FirmC> {
+export function firm(agent: (i: number) => Runner<SalesC>): Runner<FirmC> {
+  // Three agents exist. The summands say how many a year uses: the first uses
+  // agent 0, the second agents 0 and 1, the third all three. Agents outside
+  // the chosen summand are running and are never prompted.
   return sumC<Floor1, SumC<Floor2, Floor3>>(
-    agent(),
+    agent(0),
     sumC<Floor2, Floor3>(
-      tensorC(agent(), agent()),
-      tensorC(agent(), tensorC(agent(), agent())),
+      tensorC(agent(0), agent(1)),
+      tensorC(agent(0), tensorC(agent(1), agent(2))),
     ),
   );
 }

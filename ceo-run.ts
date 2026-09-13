@@ -8,7 +8,7 @@ import { type Board, type CeoC, SIZE, ceo, firm } from "./ceo.ts";
 /** One sales agent, capacity per year. Counts its own prompts so the run can
  *  show that only the summand taken is ever contacted. */
 let prompted = 0;
-const agent = (capacity: number) => (): Runner<SalesC> => ({
+const agent = (capacity: number) => (_i: number): Runner<SalesC> => ({
   label: "sales",
   run<S extends Shape<SalesC>>(shape: S) {
     prompted++;

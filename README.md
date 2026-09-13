@@ -17,8 +17,14 @@ Agentic AI*, vendored unmodified into [`lib/`](lib/). Requires
 
 ```
 deno check *.ts lib/*.ts     # includes the type tests; fails in both directions
-deno run firm-run.ts         # six years, three configurations
-deno run ceo-run.ts          # eight years under a CEO that resizes the floor
+deno run firm-run.ts         # six years, three configurations, stub leaves
+deno run ceo-run.ts          # eight years under a CEO, stub leaves
+
+./up.sh                      # six processes on 8821, 8822, 8831-8833, 8841
+./firm years 10              # ten years, for real
+./firm board                 # what the CEO currently believes
+./sandbox-check.sh           # does the permission set enforce the topology?
+./down.sh
 ```
 
 ## The shape of it
@@ -212,6 +218,81 @@ going down and invisible coming back, which is right: you know which branch you
 took. `stalin/PLAN-routing-agent.md` predicted this in prose;
 `ceo-type-tests.ts` now asserts it so the warning cannot rot.
 
+## Running it
+
+Six processes. Each hop between them is a spawned `delegate.ts`, so control
+genuinely flows down and the boundary is not a function call wearing a costume.
+
+```
+  year  agents  revenue  unsold  constraint   next year
+  1928      1        3       9       sales      run two
+  1929      2       10       2       sales      run three
+  1930      3       12       0       sales      run three
+  …
+  1935      3        9       3       sales      run three     ← a thin research year
+  10-year revenue 106
+```
+
+Research is the only source of variation and it is seeded (`FIRM_SEED`), so a
+run is reproducible. The CEO's board lives in `ceo.server.ts` rather than in the
+CLI, because an agent with authority should hold it in its own address space;
+`./firm` is a thin client that may reach the CEO and nothing else.
+
+`/tmp/firm-dev.log` shows the tensor doing what it claims. At two agents, two
+`Develop` prompts arrive before either reply leaves:
+
+```
+↓ dev  Develop wanted=6 unsold=0 year=1929
+↓ dev  Develop wanted=6 unsold=0 year=1929
+↑ dev  {products, shortfall}
+↑ dev  {products, shortfall}
+```
+
+Both shapes supplied up front, both replies owed.
+
+## The sandbox, and the half of it that does not work
+
+`./up.sh` scopes permissions per server, and `./sandbox-check.sh` tests whether
+the scoping is a mechanism or a wish. It starts `rogue.server.ts` — research with
+one extra line that phones a sales agent — under research's exact permissions.
+
+**Case 1 passes.** A hop is a *process*, so a server with no `--allow-run`
+cannot originate an edge, whatever its source says:
+
+```
+{"error":"Requires run access to \"deno\", run again with the --allow-run flag"}
+PASS — a server with no --allow-run cannot delegate. Leaf-ness is enforced.
+```
+
+That is the sloppy-developer claim, mechanised. Research is a leaf because the
+kernel says so, not because nobody has edited it yet.
+
+**Case 2 fails, and finding that out was worth the exercise.** Give the same
+rogue `--allow-run=deno` and scope its network to its own port only. The edge is
+taken anyway. `lib/wire.ts` spawns the hop with an *unscoped* grant:
+
+```ts
+args: ["run", "--quiet", "--allow-net", "--allow-env", script, ...]
+```
+
+so any server that may delegate may reach any host through the child.
+
+> **Leaf-ness is enforced. Which edges a non-leaf may take is not.** The
+> `--allow-net` lists in `up.sh` are documentation of intent, and are labelled as
+> such there.
+
+The fix is one line and the information is already present, since `delegate.ts`
+is handed the port:
+
+```ts
+"--allow-net=127.0.0.1:" + port + ",localhost:" + port
+```
+
+`lib/` is vendored verbatim and `lib/README.md` records that editing it is the
+beginning of a fork, so this is reported rather than patched. It applies equally
+to `stalin` and `federation`, which grant blanket `--allow-run --allow-net` to
+every server.
+
 ## What this does not demonstrate
 
 - **The `product` case is not exercised.** Development has no capacity bound, so
@@ -225,9 +306,9 @@ took. `stalin/PLAN-routing-agent.md` predicted this in prose;
   fixed `Ŷ`. A CEO that genuinely recompiles — that wants a fourth topology —
   needs a shell, a rollback story, and `deno check` as the refusal mechanism.
   None of that is here.
-- **Every leaf is a stub.** There are no processes here yet, so nothing in this
-  repository yet demonstrates the claim that a container boundary enforced by a
-  process is one a careless developer cannot leak through.
+- **The per-edge sandbox.** See above: only leaf-ness is enforced. A firm whose
+  topology must be enforced between non-leaves needs the upstream fix, or
+  separate users, or network namespaces.
 - **`Worker` is a reconstruction.** It is written to `A ⊗ X → Y` with `A = S ▷ S`
   as reported second-hand. If that is wrong, the `Worker` interface changes and
   nothing below it does.
